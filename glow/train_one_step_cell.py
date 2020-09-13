@@ -1,12 +1,10 @@
 import numpy as np
 from mindspore.ops import composite as C, functional as F, operations as P
-from mindspore.common import Tensor, dtype as mstype
+from mindspore.common import Tensor
 from mindspore.nn.cell import Cell
-import mindspore.nn as nn
-from mindspore.common.initializer import initializer
-from mindspore.common.parameter import Parameter, ParameterTuple
+from mindspore.common.parameter import ParameterTuple
 from mindspore.nn.wrap.grad_reducer import DistributedGradReducer
-from mindspore.parallel._utils import (_get_device_num, _get_mirror_mean,  _get_parallel_mode)
+from mindspore.parallel._utils import (_get_device_num, _get_mirror_mean, _get_parallel_mode)
 from mindspore.train.parallel_utils import ParallelMode
 
 _grad_norm_op = C.MultitypeFuncGraph("grad_clip_norm_op")
@@ -20,11 +18,15 @@ def grad_clip_norm_clipcoef(grad):
     grad_square = square_op(grad)
     gradreduce = reduce_sum_op(grad_square, axis)
     return gradreduce
-@_grad_norm_op.register("Tensor","Tensor")
+
+
+@_grad_norm_op.register("Tensor", "Tensor")
 def tensor_grad_clip_norm(scale, grad):
     minop = P.Minimum()
-    return grad * minop(scale,judge)
-@_grad_value_op.register("Tensor","Tensor")
+    return grad * minop(scale, judge)
+
+
+@_grad_value_op.register("Tensor", "Tensor")
 def tensor_grad_clip_value(scale, grad):
     minop = P.Minimum()
     maxop = P.Maximum()
@@ -32,8 +34,10 @@ def tensor_grad_clip_value(scale, grad):
     grad = maxop(grad, negop(scale))
     grad = minop(grad, scale)
     return grad
+
+
 class TrainOneStepCell(Cell):
-      def __init__(self, network, optimizer, sens=1.0):
+    def __init__(self, network, optimizer, sens=1.0):
         super(TrainOneStepCell, self).__init__(auto_prefix=False)
         self.network = network
         self.network.add_flags(defer_inline=True)
@@ -61,7 +65,7 @@ class TrainOneStepCell(Cell):
         self.judge = Tensor(np.array([[[[1.0]]]]).astype(np.float32))
         self.max_value = Tensor(np.array([1.0]).astype(np.float32))
 
-      def construct(self, data, label):
+    def construct(self, data, label):
         weights = self.weights
         loss = self.network(data, label)
         sens = P.Fill()(P.DType()(loss), P.Shape()(loss), self.sens)

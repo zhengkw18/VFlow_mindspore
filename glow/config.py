@@ -2,6 +2,7 @@ import os
 import json
 import datetime
 
+
 class JsonConfig(dict):
     """
     The configures will be loaded and dumped as json file.

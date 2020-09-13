@@ -3,20 +3,20 @@ import cv2
 import numpy as np
 from torch.utils.data import DataLoader
 from .config import JsonConfig
-from .models import Glow, GlowLoss
+from .models import GlowLoss
 from mindspore.common.tensor import Tensor
 import mindspore.context as context
 import mindspore.nn as nn
 from .train_one_step_cell import TrainOneStepCell
 from mindspore.common.initializer import initializer
-from mindspore.nn.optim import Adamax, Momentum, Adam
-from mindspore.communication.management import init, NCCL_WORLD_COMM_GROUP, get_rank, get_group_size
+from mindspore.nn.optim import Adamax
+from mindspore.communication.management import init, get_group_size
 from mindspore.train.callback import ModelCheckpoint, _InternalCallbackParam, RunContext, CheckpointConfig
 from mindspore.common import dtype as mstype
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 context.set_context(mode=context.GRAPH_MODE, save_graphs=False, device_target="GPU", enable_mem_reuse=True, enable_dynamic_memory=False)
-# init('nccl')
+init('nccl')
 
 
 class WithLossCell(nn.Cell):
@@ -26,8 +26,8 @@ class WithLossCell(nn.Cell):
         self._loss_fn = loss_fn
 
     def construct(self, x, y_onehot):
-        z_final, nll, augmented_nll, y_logits = self._backbone(x, y_onehot)
-        return self._loss_fn(nll, augmented_nll, y_logits, y_onehot)
+        z_final, nll, y_logits, dimensions = self._backbone(x, y_onehot)
+        return self._loss_fn(nll, y_logits, y_onehot, dimensions)
 
 
 class Trainer(object):
@@ -53,6 +53,7 @@ class Trainer(object):
         self.global_step = 0
         # lr schedule
         self.lrschedule = lrschedule
+        self.n_bits = hparams.Data.n_bits
 
     def set_checkpoint(self, train_net):
         cb_params = _InternalCallbackParam()
@@ -125,7 +126,7 @@ class Trainer(object):
     def train(self):
         # model
         glow_net = self.graph
-        weight_init = Tensor((np.ones([1]) * (0.5)).astype(np.float32))
+        weight_init = Tensor((np.ones([1]) * (self.weight_y)).astype(np.float32))
         glow_loss = GlowLoss(y_condition=True, y_briterion="multi-classes", weight_y=weight_init)
         net_with_loss = WithLossCell(glow_net, glow_loss, self.batch_size)
         # optimizer
@@ -134,7 +135,7 @@ class Trainer(object):
         steps = self.multistep(self.hparams.Train.num_batches)
         lr = self.multisteplr(0.001)
         optimizer = Adamax(filter(lambda x: x.requires_grad, glow_net.get_parameters()), lr, beta1, beta2, steps)
-        #optimizer = Momentum(filter(lambda x: x.requires_grad, glow_net.get_parameters()), 0.0001, 0.0)
+        # optimizer = Momentum(filter(lambda x: x.requires_grad, glow_net.get_parameters()), 0.0001, 0.0)
         # build train net
         train_net = TrainOneStepCell(net_with_loss, optimizer)
         train_net.set_train()
@@ -154,7 +155,7 @@ class Trainer(object):
                     x = Tensor(data["image"].numpy() + np.random.normal(0., 1.0 / 256, size=(self.batch_size, 3, 64, 64)).astype(np.float32))
                     y_onehot = Tensor(data["attr"].numpy().astype(np.float32))
                 loss = train_net(x, y_onehot)
-                print("epoch = {0}, iter = {1}, loss = {2}".format(epoch, self.global_step, loss))
+                print("epoch = {0}, iter = {1}, loss = {2}".format(epoch, self.global_step, loss + self.n_bits))
                 if self.hparams.Train.enable_checkpoint is True:
                     self.save_ckpt(run_context, cb_params, ckpoint_cb)
                 self.global_step += 1
@@ -176,7 +177,7 @@ class Trainer(object):
                 break
 
             glow_encoder = self.graph
-            z, _, _ = glow_encoder(x, y_onehot)
+            z, _, _, _ = glow_encoder(x, y_onehot)
             images = glow_decoder(z, y_onehot)
         else:
             batch_size = self.batch_size

@@ -3,7 +3,7 @@
 Usage:
     train.py <hparams> <dataset> <dataset_root>
 """
-import os
+import sys
 import vision
 from docopt import docopt
 from torchvision import transforms
@@ -34,7 +34,7 @@ if __name__ == "__main__":
             built = build(hparams, dataset, True)
         else:
             print("programm exited with unkown reason")
-            system.exit(0)
+            sys.exit(0)
     # begin to train
     trainer = Trainer(**built, dataset=dataset, dataset_root=dataset_root, hparams=hparams)
     if not hparams.Glow.reverse:

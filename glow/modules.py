@@ -1,11 +1,10 @@
 import numpy as np
-import scipy.linalg
 from mindspore.common.parameter import Parameter
-import mindspore.common.initializer as init
 from mindspore.common.initializer import initializer
 from mindspore import Tensor
 from mindspore.ops import operations as P
 import mindspore.nn as nn
+
 
 class ActNorm2d(nn.Cell):
     def __init__(self, num_features, pixels, scale=1., init=False, reverse=False):
@@ -69,6 +68,7 @@ class ActNorm2d(nn.Cell):
                 input = self.sub(input, self.bias)
                 return input, logdet
 
+
 class ConvActNorm2d(nn.Cell):
     def __init__(self, num_features, pixels, scale=1., init=False, reverse=False):
         super(ConvActNorm2d, self).__init__()
@@ -122,6 +122,7 @@ class ConvActNorm2d(nn.Cell):
                 input = self.sub(input, self.bias)
                 return input
 
+
 class LinearZeros(nn.Cell):
     def __init__(self, in_channels, out_channels, logscale_factor=3.0):
         super(LinearZeros, self).__init__()
@@ -146,6 +147,7 @@ class LinearZeros(nn.Cell):
         h = self.exp(h)
         h = self.mul(output, h)
         return h
+
 
 class Conv2d(nn.Cell):
     pad_dict = {
@@ -180,14 +182,15 @@ class Conv2d(nn.Cell):
         self.init = init
         self.actnorm = ConvActNorm2d(out_channels, pixels=self.pixels, init=self.init, reverse=self.reverse)
         self.weight = initializer(Tensor(np.random.normal(0, weight_std, [out_channels, in_channels, kernel_size[0], kernel_size[1]]).astype(np.float32)),
-                                [out_channels, in_channels, kernel_size[0], kernel_size[1]])
+                                  [out_channels, in_channels, kernel_size[0], kernel_size[1]])
         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride[0], pad_mode,
-                               padding[0], has_bias=(not do_actnorm), weight_init=self.weight)
+                                padding[0], has_bias=(not do_actnorm), weight_init=self.weight)
 
     def construct(self, input):
         x = self.conv2d(input)
         x = self.actnorm(x)
         return x
+
 
 class Conv2dZeros(nn.Cell):
     def __init__(self, in_channels, out_channels, kernel_size=[3, 3], stride=[1, 1], pad_mode="pad", logscale_factor=3.0):
@@ -214,6 +217,7 @@ class Conv2dZeros(nn.Cell):
         h = self.exp(h)
         output = self.mul(conv_output, h)
         return output
+
 
 class Permute2d(nn.Cell):
     def __init__(self, input_shape, num_channels, shuffle, reverse=False):
@@ -250,34 +254,43 @@ class Permute2d(nn.Cell):
             output = self.transpose(h, self.perm)
         return output
 
+
 class GaussianDiagLogp(nn.Cell):
     def __init__(self, Channels):
         super(GaussianDiagLogp, self).__init__()
-        self.log2pi = Tensor((np.ones([1, Channels, 1, 1]) * np.log(2 * np.pi)).astype(np.float32))
-        #mindspore operators
+        self.log2pi = Tensor((np.ones([1, 1, 1, 1]) * np.log(2 * np.pi)).astype(np.float32))
+        # mindspore operators
         self.exp = P.Exp()
         self.sum = P.ReduceSum(True)
         self.sum_axis = (1, 2, 3)
         self.mul = P.Mul()
         self.add = P.TensorAdd()
-        self.div  = P.RealDiv()
+        self.div = P.RealDiv()
         self.sub = P.Sub()
         self.square = P.Square()
-        self.const_1 = Tensor((np.ones([1, Channels, 1, 1])*(-0.5)).astype(np.float32))
-        self.const_2f = Tensor((np.ones([1, Channels, 1, 1])*2).astype(np.float32))
+        self.const_1 = Tensor((np.ones([1, 1, 1, 1]) * (-0.5)).astype(np.float32))
+        self.const_2f = Tensor((np.ones([1, 1, 1, 1]) * 2).astype(np.float32))
 
     def construct(self, mean, logs, x):
-        logs_2 = self.mul(logs, self.const_2f)
-        x_mean = self.sub(x, mean)
-        x_mean_2 = self.square(x_mean)
-        exp_h = self.exp(logs_2)
-        div_h = self.div(x_mean_2, exp_h)
-        h = self.add(logs_2, div_h)
-        h = self.add(h, self.log2pi)
-        h = self.mul(self.const_1, h)
-        h = self.sum(h, self.sum_axis)
-        likelihood = h
+        if mean is None and logs is None:
+            h = self.square(x)
+            h = self.add(h, self.log2pi)
+            h = self.mul(self.const_1, h)
+            h = self.sum(h, self.sum_axis)
+            likelihood = h
+        else:
+            logs_2 = self.mul(logs, self.const_2f)
+            x_mean = self.sub(x, mean)
+            x_mean_2 = self.square(x_mean)
+            exp_h = self.exp(logs_2)
+            div_h = self.div(x_mean_2, exp_h)
+            h = self.add(logs_2, div_h)
+            h = self.add(h, self.log2pi)
+            h = self.mul(self.const_1, h)
+            h = self.sum(h, self.sum_axis)
+            likelihood = h
         return likelihood
+
 
 class GaussianDiagSample(nn.Cell):
     def __init__(self, shape, eps_std=None):
@@ -297,6 +310,7 @@ class GaussianDiagSample(nn.Cell):
         eps = self.random_normal(self.size, self.mean, self.stddev)
         return self.add(mean, self.mul(self.exp(logs), eps))
 
+
 class Split2d(nn.Cell):
     def __init__(self, input_shape, num_channels, eps_std=None, reverse=False):
         super(Split2d, self).__init__()
@@ -309,7 +323,7 @@ class Split2d(nn.Cell):
             self.gauss_logp = GaussianDiagLogp(num_channels // 2)
         else:
             self.eps_std = eps_std
-            self.gauss_sample = GaussianDiagSample((input_shape[0], input_shape[1]//2, input_shape[2], input_shape[3]), self.eps_std)
+            self.gauss_sample = GaussianDiagSample((input_shape[0], input_shape[1] // 2, input_shape[2], input_shape[3]), self.eps_std)
         # mindspore operators
         self.cat = P.Concat(axis=1)
         self.add = P.TensorAdd()
@@ -347,6 +361,7 @@ class Split2d(nn.Cell):
             z = self.cat((z1, z2))
             return z, logdet
 
+
 class SqueezeLayer(nn.Cell):
     def __init__(self, input_shape, factor=2, reverse=False):
         super(SqueezeLayer, self).__init__()
@@ -381,15 +396,18 @@ class SqueezeLayer(nn.Cell):
             output = x
         return output, logdet
 
+
 class Slice(nn.Cell):
     def __init__(self, begin, size):
         super(Slice, self).__init__()
         self.slice = P.Slice()
         self.begin = begin
         self.size = size
+
     def construct(self, x):
         h = self.slice(x, self.begin, self.size)
         return h
+
 
 class StridedSlice(nn.Cell):
     def __init__(self, begin, end, stride):

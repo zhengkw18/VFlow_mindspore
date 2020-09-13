@@ -1,4 +1,4 @@
 from .datasets import CelebADataset
 Datasets = {
-            "celeba": CelebADataset
-        }
+    "celeba": CelebADataset
+}

@@ -2,34 +2,43 @@
     "Dir": {
         "log_root": "results/celeba"
     },
-    "Glow" : {
+    "Glow": {
         "reverse": false,
-        "image_shape": [64, 64, 3],
+        "image_shape": [
+            64,
+            64,
+            3
+        ],
         "hidden_channels": 512,
         "K": 2,
         "L": 2,
         "actnorm_scale": 1.0,
         "flow_permutation": "shuffle",
-        "flow_coupling": "affine",
+        "flow_coupling": "additive",
         "learn_top": true,
-        "y_condition": true,
+        "y_condition": false,
         "enable_project_class": false,
         "y_classes": 40,
-        "eps_std": 0.5,
-        "augmentation": 3
+        "eps_std": 0.7,
+        "augment_hidden_channels": 96,
+        "augment_steps": 4
     },
-    "Criterion" : {
+    "Criterion": {
         "y_condition": "multi-classes"
     },
-    "Data" : {
+    "Data": {
         "center_crop": 160,
-        "resize": 64
+        "resize": 64,
+        "n_bits": 5
     },
     "Optim": {
         "name": "adam",
         "args": {
             "lr": 1e-3,
-            "betas": [0.9, 0.9999],
+            "betas": [
+                0.9,
+                0.9999
+            ],
             "eps": 1e-8
         },
         "Schedule": {
@@ -41,7 +50,9 @@
         }
     },
     "Device": {
-        "glow": ["cpu"],
+        "glow": [
+            "cpu"
+        ],
         "data": "gpu"
     },
     "Train": {
@@ -56,7 +67,7 @@
         "plot_gap": 50,
         "inference_gap": 50,
         "warm_start": "",
-        "weight_y": 0.5,
+        "weight_y": 0,
         "enable_distributed": false,
         "enable_checkpoint": false,
         "enable_minddata": false
